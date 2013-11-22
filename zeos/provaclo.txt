@@ -1,0 +1,510 @@
+#include "jocsdeprova.h"
+2	#include "myerrno.h"
+3	#include "testsIds.h"
+4	#include "clone.h"
+5	#include "utils_user.h"
+6	
+7	
+8	extern int errno;
+9	void exit();
+10	
+11	extern struct jpstats jp;
+12	
+13	#define IT_QUANTUM 25000 //number of iterations
+14	#define WRITE(s) write(1, (s), proso_strlen(s))
+15	#define ERROR(s, error) do { (s)->errordesc = (error); write(1, (s)->errordesc, proso_strlen((s)->errordesc));  }while(0)
+16	#define INITCHECK(ret,statement, s) do { ret = statement; if (ret <= 0) {s->ok = BAD; ERROR(s, "INITTEST failed");}; } while(0)
+17	
+18	#define nice zeos_nice
+19	static inline void delay() {int i=0;int qt=nice(10); if (nice(qt)!=10) { WRITE("PANIC: nice(nice(10)) does not return previous quantum!\n");};while(i<(IT_QUANTUM*qt)){i++;}}
+20	
+21	static inline void qtdelay(int qt) {int i=0;int x=IT_QUANTUM*qt;while(i<x){i++;}}
+22	
+23	
+24	
+25	
+26	
+27	int init_deliver(struct jpstats *jp){
+28	        jpstats_add(jp, "clone(invalid function address)",TEST_CLONE,TEST_CLONE_INVALID_FUNCTION,GOOD,testcloneInvalidFunction); 
+29	        jpstats_add(jp, "clone(invalid stack address)",TEST_CLONE,TEST_CLONE_INVALID_STACK,GOOD,testcloneInvalidStack); 
+30	        jpstats_add(jp, "clone(OK)",TEST_CLONE,TEST_CLONE_OK,GOOD,testcloneOk); 
+31	        jpstats_add(jp, "clone()shares memory",TEST_CLONE,TEST_CLONE_SHARES_MEM,GOOD,testcloneSharesMem); 
+32	        jpstats_add(jp, "fork()does not share memory",TEST_CLONE,TEST_FORK_DO_NOT_SHARE_MEM,GOOD,testcloneNoSharesMem); 
+33	        jpstats_add(jp, "clone many threads (single)",TEST_CLONE,TEST_CLONE_MANY_THREADS,GOOD,testcloneManyThreads); 
+34	        jpstats_add(jp, "clone maximum threads ",TEST_CLONE,TEST_CLONE_MAX_THREADS,GOOD,testcloneMaxThreas); 
+35	        jpstats_add(jp, "clone many threads (maximum) ",TEST_CLONE,TEST_CLONE_MANY_THREADS2,GOOD,testcloneManyThreads2); 
+36	        jpstats_add(jp, "fork after clone ",TEST_CLONE,TEST_CLONE_FORK_AFTER_CLONE,GOOD,testcloneForkAfterClone); 
+37	        jpstats_add(jp, "fork inside clone ",TEST_CLONE,TEST_CLONE_FORK_IN_CLONE,GOOD,testcloneForkInClone); 
+38	        return 0;
+39	}
+40	
+41	int runjp(void){
+42	        int res;
+43	        res = jpstats_init(&jp, "3rd delivery");
+44	        if (res < 0)
+45	                return res;
+46	        init_deliver(&jp);
+47	        jpstats_run(&jp);
+48	        jpstats_results(&jp);
+49	}
+50	
+51	//with rank
+52	int runjp_rank(int rank_start, int rank_end){
+53	        int res;
+54	        res = jpstats_init_rank(&jp, "3rd delivery", rank_start, rank_end);
+55	        if (res < 0)
+56	                return res;
+57	        init_deliver(&jp);
+58	        jpstats_run(&jp);
+59	        jpstats_results(&jp);
+60	}
+61	
+62	
+63	//syscall used:
+64	// Test that check incorrect parameter function
+65	//GROUP:  TEST_CLONE
+66	//ID: TEST_CLONE_INVALID_FUNCTION
+67	int testcloneInvalidFunction(struct stat *s){
+68	        int res;
+69	        char validstack[200];
+70	
+71	        res = clone ( 0xDEADBEEF, &validstack[200] );
+72	        if (res >= 0){
+73	                s->ok=BAD; 
+74	                ERROR(s, " TEST: clone with an invalid function address DOES work!. ");
+75	        }
+76	}
+77	
+78	//syscall used: exit
+79	// Test that check incorrect parameter stack
+80	//GROUP:  TEST_CLONE
+81	//ID: TEST_CLONE_INVALID_STACK
+82	int testcloneInvalidStack(struct stat *s){
+83	        int res;
+84	        int fn(void) {exit();}
+85	        res = clone (fn, 0xDEADBEEF);
+86	        if (res >= 0){
+87	                s->ok=BAD; 
+88	                ERROR(s, " TEST: clone with an invalid stack address DOES work!. ");
+89	        }
+90	}
+91	
+92	//syscall used: exit
+93	// Test that check a valid use of clone system call (checks a positive return value)
+94	//GROUP:  TEST_CLONE
+95	//ID: TEST_CLONE_OK
+96	int testcloneOk(struct stat *s){
+97	        int res;
+98	        int fn(void) {exit();}
+99	        char validstack[200];
+100	        res = clone (fn, &validstack[200]);
+101	        if (res <= 0){
+102	                s->ok=BAD; 
+103	                ERROR(s, " TEST: clone with valid parameters returns a negative value!. ");
+104	        }
+105	}
+106	
+107	//syscall used: exit, sem_init, sem_wait, sem_signal, sem_destroy
+108	// A variable is declared in the parent, modified in the child and checked again at the parent.
+109	//GROUP:  TEST_CLONE
+110	//ID: TEST_CLONE_SHARES_MEM
+111	
+112	int GLOBAL_VAR = 0;
+113	
+114	int testcloneSharesMem(struct stat *s){
+115	        int res;
+116	        int fn(void) {
+117	                GLOBAL_VAR ++; //All threads should see this change
+118	                sem_signal (0);
+119	                exit();
+120	        }
+121	        char validstack[1000];
+122	       
+123	        GLOBAL_VAR = 1;
+124	
+125	        res = sem_init (0,0);
+126	        if (res<0) {
+127	                s->ok = BAD;
+128	                ERROR(s, "INITTEST: sem_init(0,0) failed");
+129	                return;
+130	        }
+131	        res= clone (fn, &validstack[1000]);
+132	        if (res<0) {
+133	                s->ok = BAD;
+134	                ERROR(s, "INITTEST: valid clone failed");
+135	                sem_destroy (0);
+136	                return;
+137	        }
+138	
+139	        sem_wait (0);
+140	        if (GLOBAL_VAR != 2) { //Clone did not update global shared memory correctly
+141	                s->ok = BAD;
+142	                ERROR(s, " TEST: clone does not share address space!. ");
+143	        }
+144	        sem_destroy (0);
+145	        GLOBAL_VAR = 0;
+146	}
+147	
+148	//syscall used: fork, exit, sem_init, sem_wait, sem_signal, sem_destroy
+149	// A variable is declared in the parent, modified in the child and checked again at the parent.
+150	//GROUP:  TEST_CLONE
+151	//ID: TEST_FORK_DO_NOT_SHARE_MEM
+152	int testcloneNoSharesMem(struct stat *s){
+153	        int res;
+154	       
+155	        GLOBAL_VAR = 1;
+156	
+157	        res= sem_init (0, 0);
+158	        if (res<0) {
+159	                s->ok = BAD;
+160	                ERROR(s, "INITTEST: sem_init(0,0) failed");
+161	                return;
+162	        }
+163	        res= fork ();
+164	        if (res < 0) {
+165	                s->ok = BAD;
+166	                ERROR(s, "INITTEST: fork() failed");
+167	                sem_destroy (0);
+168	                return;
+169	        }
+170	
+171	        if (res == 0) {
+172	                GLOBAL_VAR ++; //Only this process should see this change
+173	                sem_signal (0);
+174	                exit();
+175	        }
+176	
+177	        sem_wait (0);
+178	        if (GLOBAL_VAR != 1) { //Fork changed global memory
+179	                s->ok = BAD;
+180	                ERROR(s, " TEST: fork shares memory address space!");
+181	        }
+182	        sem_destroy (0);
+183	}
+184	
+185	//syscall used: exit, sem_init, sem_wait, sem_signal, sem_destroy
+186	// Create/Destroy hundreds of threads (a single thread active at any time)
+187	//GROUP:  TEST_CLONE
+188	//ID: TEST_CLONE_MANY_THREADS
+189	int testcloneManyThreads(struct stat *s){
+190	        int res;
+191	        int fn(void) {
+192	                GLOBAL_VAR ++;
+193	                sem_signal (0);
+194	                exit();
+195	        }
+196	        char validstack[1000];
+197	        int i=0;       
+198	
+199	        res = sem_init (0,0);
+200	        if (res<0) {
+201	                s->ok = BAD;
+202	                ERROR(s, "INITTEST: sem_init(0,0) failed");
+203	                return;
+204	        }
+205	        GLOBAL_VAR = 1;
+206	        do {
+207	                res =  clone (fn, &validstack[1000]);
+208	                if (res >0) {
+209	                        i ++;
+210	                        sem_wait (0);
+211	                }
+212	        } while ( (res>0) && (i<300) );
+213	
+214	        if (res<0) {
+215	                s->ok = BAD;
+216	                ERROR(s, " TEST: clone failed to create a thread (but no more than one thread active at any time). Does exit free the thread structures?");
+217	        }
+218	        if (GLOBAL_VAR != 301) {
+219	                s->ok = BAD;
+220	                ERROR(s, " TEST: clone does not share memory!");
+221	        }
+222	
+223	        GLOBAL_VAR = 0;
+224	        sem_destroy (0);
+225	}
+226	
+227	//syscall used: exit, sem_init, sem_wait, sem_signal, sem_destroy
+228	// testcloneMaxThreads -> Create maximum number of threads == 8
+229	//GROUP:  TEST_CLONE
+230	//ID: TEST_CLONE_MANY_THREADS
+231	int testcloneMaxThreas(struct stat *s){
+232	        int res;
+233	        int fn(void) {
+234	                sem_wait(0);
+235	                GLOBAL_VAR++;
+236	                sem_signal (1);
+237	                exit();
+238	        }
+239	        char validstack[1000];
+240	        int i=0;       
+241	        int n=0;       
+242	
+243	        res = sem_init (0,0);
+244	        if (res<0) {
+245	                s->ok = BAD;
+246	                ERROR(s, "INITTEST: sem_init(0,0) failed");
+247	                return;
+248	        }
+249	        res = sem_init (1,0);
+250	        if (res<0) {
+251	                s->ok = BAD;
+252	                ERROR(s, "INITTEST: sem_init(1,0) failed");
+253	                sem_destroy(0);
+254	                return;
+255	        }
+256	        GLOBAL_VAR = 1;
+257	        do { //Create threads (how many? 8 as maximum)
+258	                res =  clone (fn, &validstack[100*i]); //Use a different stack for each thread!
+259	                if (res >0) {
+260	                        i ++;
+261	                }
+262	        } while ( res>0 );
+263	
+264	        if (i < 8) {
+265	                s->ok = BAD;
+266	                ERROR(s, "Unable to create the maximum of 8 threads at the same time");
+267	        }
+268	
+269	        n = i;
+270	        while (n>0) { //Wait destruction of all threads
+271	                sem_signal (0);
+272	                sem_wait (1);
+273	                n--;
+274	        } 
+275	
+276	        if (GLOBAL_VAR != 9) {
+277	                s->ok = BAD;
+278	                ERROR(s, " TEST: clone does not share memory!");
+279	        }
+280	        GLOBAL_VAR = 0;
+281	        sem_destroy (0);
+282	        sem_destroy (1);
+283	}
+284	
+285	//syscall used: exit, sem_init, sem_wait, sem_signal, sem_destroy
+286	// testcloneManyThreads2 -> Create threads, destroy them and create them again.
+287	//GROUP:  TEST_CLONE
+288	//ID: TEST_CLONE_MANY_THREADS
+289	int testcloneManyThreads2(struct stat *s){
+290	        int res;
+291	        int fn(void) {
+292	                sem_wait(0);
+293	                GLOBAL_VAR ++;
+294	                sem_signal (1);
+295	                exit();
+296	        }
+297	        char validstack[1000];
+298	        int i=0;       
+299	        int n=0;       
+300	
+301	        res = sem_init (0,0);
+302	        if (res<0) {
+303	                s->ok = BAD;
+304	                ERROR(s, "INITTEST: sem_init(0,0) failed");
+305	                return;
+306	        }
+307	        res = sem_init (1,0);
+308	        if (res<0) {
+309	                s->ok = BAD;
+310	                ERROR(s, "INITTEST: sem_init(1,0) failed");
+311	                sem_destroy(0);
+312	                return;
+313	        }
+314	        do { //Create threads (how many? 8 as maximum)
+315	                res =  clone (fn, &validstack[100*i]); //Use different stacks
+316	                if (res > 0) {
+317	                        i ++;
+318	                }
+319	        } while ( res>0 );
+320	
+321	        n = i;
+322	        while (n>0) { //Wait destruction of all threads
+323	                sem_signal (0);
+324	                sem_wait (1);
+325	                n--;
+326	        } 
+327	
+328	        GLOBAL_VAR = 0;
+329	
+330	        n = i;
+331	        do { //Create threads again
+332	                res =  clone (fn, &validstack[100*n]); //Use different stacks
+333	                if (res > 0) {
+334	                        n --;
+335	                }
+336	        } while ( (n>0) && (res>0) );
+337	
+338	        if (res<0) {
+339	                s->ok = BAD;
+340	                ERROR(s, " TEST: clone failed after creating the maximum number of threads. Does exit free the thread structures?");
+341	        }
+342	
+343	        n = i;
+344	        while (n>0) { //Wait destruction of all threads
+345	                sem_signal (0);
+346	                sem_wait (1);
+347	                n--;
+348	        } 
+349	
+350	        if (GLOBAL_VAR != 9) {
+351	                s->ok = BAD;
+352	                ERROR(s, " TEST: clone does not share memory!");
+353	        }
+354	        GLOBAL_VAR = 0;
+355	
+356	        sem_destroy (0);
+357	        sem_destroy (1);
+358	}
+359	
+360	//syscall used: exit, fork, sem_init, sem_wait, sem_signal, sem_destroy
+361	// testcloneForkAfterClone -> Create a fork after a clone
+362	//GROUP:  TEST_CLONE
+363	//ID: TEST_CLONE_MANY_THREADS
+364	int testcloneForkAfterClone(struct stat *s){
+365	        int res;
+366	        int fn(void) {
+367	                sem_wait(0);
+368	                sem_signal (1);
+369	                exit();
+370	        }
+371	        char validstack[1000];
+372	        int i=0;       
+373	        int n=0;       
+374	
+375	        res = sem_init (0,0);
+376	        if (res<0) {
+377	                s->ok = BAD;
+378	                ERROR(s, "INITTEST: sem_init(0,0) failed");
+379	                return;
+380	        }
+381	        res = sem_init (1,0);
+382	        if (res<0) {
+383	                s->ok = BAD;
+384	                ERROR(s, "INITTEST: sem_init(1,0) failed");
+385	                sem_destroy(0);
+386	                return;
+387	        }
+388	        do { //Create maximum number of threads to fulfill all PCBs and their directories
+389	                res =  clone (fn, &validstack[100*i]); //Use different stacks
+390	                if (res >0) {
+391	                        i ++;
+392	                }
+393	        } while ( res>0 );
+394	
+395	        //Destroy a single thread
+396	        if (i>0) {
+397	                sem_signal (0);
+398	                sem_wait (1);
+399	                i--;
+400	        }
+401	        // Create a fork
+402	        GLOBAL_VAR=1;
+403	        res = fork();
+404	        if (res < 0) { s->ok = BAD; ERROR(s, "INITTEST: Unable to create a fork"); }
+405	        else if (res == 0) {
+406	                sem_wait(0);
+407	                GLOBAL_VAR=2;
+408	                sem_signal (1);
+409	                exit();
+410	        } 
+411	        i++;
+412	        n = i;
+413	        while (n>0) { //Wait destruction of all threads and fork
+414	                sem_signal (0);
+415	                sem_wait (1);
+416	                n--;
+417	        }
+418	
+419	        if (GLOBAL_VAR != 1) {
+420	                s->ok = BAD;
+421	                ERROR(s, " TEST: fork shares memory after clones!");
+422	        }
+423	
+424	        GLOBAL_VAR = 0;
+425	
+426	        sem_destroy (0);
+427	        sem_destroy (1);
+428	}
+429	
+430	//syscall used: exit, fork, sem_init, sem_wait, sem_signal, sem_destroy
+431	// testcloneForkInClone -> Create a fork inside a clone
+432	//GROUP:  TEST_CLONE
+433	//ID: TEST_CLONE_FORK_IN_CLONE
+434	int testcloneForkInClone(struct stat *s){
+435	        int res;
+436	        int fn(void) {
+437	                res = fork();
+438	                if (res < 0) { s->ok = BAD; ERROR(s, "INITTEST: Unable to create a fork inside a clone"); }
+439	                else if (res == 0) {
+440	                        GLOBAL_VAR=2;
+441	                        sem_signal (1); //Wakeup thread
+442	                        exit();
+443	                } 
+444	                sem_wait(1); //Wait finalization of process
+445	                sem_signal(0); //Wakeup parent
+446	                exit();
+447	        }
+448	        char validstack[1000];
+449	        int i=0;       
+450	        int n=0;       
+451	
+452	       
+453	        res = sem_init (0,0);
+454	        if (res<0) {
+455	                s->ok = BAD;
+456	                ERROR(s, "INITTEST: sem_init(0,0) failed");
+457	                return;
+458	        }
+459	        res = sem_init (1,0);
+460	        if (res<0) {
+461	                s->ok = BAD;
+462	                ERROR(s, "INITTEST: sem_init(1,0) failed");
+463	                sem_destroy(0);
+464	                return;
+465	        }
+466	        GLOBAL_VAR=1;
+467	
+468	        res= clone (fn, &validstack[1000]);
+469	        if (res < 0) {
+470	                s->ok = BAD;
+471	                ERROR(s, "INITTEST: failed valid clone");
+472	                sem_destroy(0);
+473	                sem_destroy(1);
+474	                return;
+475	        }
+476	
+477	        //Wait finalization thread
+478	        sem_wait (0);
+479	
+480	        if (GLOBAL_VAR != 1) {
+481	                s->ok = BAD;
+482	                ERROR(s, " TEST: fork shares memory after clones!");
+483	        }
+484	
+485	        GLOBAL_VAR = 0;
+486	
+487	        sem_destroy (0);
+488	        sem_destroy (1);
+489	}
+490	
+491	int zeos_nice (int quant)
+492	{
+493	 int rvalue = 0;
+494	
+495	  __asm__ __volatile__ (
+496	    "int $0x82\n\t"
+497	    : "=a" (rvalue)
+498	    : "b" (quant), "a" (0x04)
+499	  );
+500	
+501	  return rvalue;
+502	}
+503	
+504	
+Note: See TracBrowser for help on using the repository browser.
+Download in other formats:
+
+    * Plain Text
+    * Original Format
+

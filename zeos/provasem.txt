@@ -1,0 +1,808 @@
+
+(please configure the [header_logo] section in trac.ini)
+Search:
+
+    * logged in as jcosta
+    * Logout
+    * Preferences
+    * Help/Guide
+    * About Trac
+
+    * Wiki
+    * Timeline
+    * Roadmap
+    * Browse Source
+    * View Tickets
+    * New Ticket
+    * Search
+    * Admin
+
+Context Navigation
+
+    * ← Previous Revision
+    * Latest Revision
+    * Next Revision →
+    * Blame
+    * Revision Log
+
+source: proso/eiso/trunk/labs/jptrunk/jpsemaphores.c @ 2163
+View revision:
+Revision 2156, 17.7 KB checked in by jcosta, 4 days ago (diff)
+
+Initial version of threads
+
+    * Property svn:eol-style set to native
+
+Line	 
+1	#include "jocsdeprova.h"
+2	#include "myerrno.h"
+3	#include "testsIds.h"
+4	#include "jpsemaphores.h"
+5	#include "utils_user.h"
+6	
+7	
+8	extern int errno;
+9	void exit();
+10	
+11	extern struct jpstats jp;
+12	
+13	#define IT_QUANTUM 25000 //number of iterations
+14	#define WRITE(s) write(1, (s), proso_strlen(s))
+15	#define ERROR(s, error) do { (s)->errordesc = (error); write(1, (s)->errordesc, proso_strlen((s)->errordesc));  }while(0)
+16	
+17	#define nice zeos_nice
+18	static inline void delay() {int i=0;int qt=nice(10); if (nice(qt)!=10) { WRITE("PANIC: nice(nice(10)) does not return previous quantum!\n");};while(i<(IT_QUANTUM*qt)){i++;}}
+19	
+20	static inline void qtdelay(int qt) {int i=0;int x=IT_QUANTUM*qt;while(i<x){i++;}}
+21	
+22	
+23	
+24	
+25	
+26	int init_deliver(struct jpstats *jp){
+27	
+28	 jpstats_add(jp, "SEM_INIT(invalid semaphores id: negative & out of range id)",TEST_SEM,TEST_INIT_INVALID_SEM,GOOD,testInitInvalidSem); 
+29	 jpstats_add(jp, "SEM_INIT(an already initialized semaphore)",TEST_SEM,TEST_INIT_INITIALIZED_SEM,GOOD,testInitInitializedSem);
+30	 /*
+31	  * This test is the same as the init with invalid id.
+32	 jpstats_add(jp, "INITIALIZE TOO MANY SEMAPHORES",TEST_SEM,TEST_INIT_TOOMANY_SEM,GOOD,testInitTooManySem);
+33	 */
+34	 jpstats_add(jp, "SEM_DESTROY(invalid semaphore id: negative & out of range id)",TEST_SEM,TEST_DESTROY_INV_SEM,GOOD,testDestroyInvSem);
+35	 jpstats_add(jp, "SEM_DESTROY(an uninitialized semaphore)",TEST_SEM,TEST_DESTROY_NOTINIT_SEM,GOOD,testDestroyNotInitSem);
+36	 jpstats_add(jp, "SEM_DESTROY(not owner)",TEST_SEM,TEST_DESTROY_NOTOWNER,GOOD,testDestroyNotOwner);
+37	
+38	
+39	/* FATHER EXECUTES SEM_WAIT */
+40	/* If the caller is task0, then it creates a new father and it stands in an enless loop, the new father ends the execution */
+41	 jpstats_add(jp, "EXIT DESTROY OWNED SEMS",TEST_SEM,TEST_DESTROY_EXIT,GOOD,testDestroyExit);
+42	 jpstats_add(jp, "EXIT DO NOT DESTROY NOT OWNED SEMS",TEST_SEM,TEST_DONOTDESTROY_EXIT,GOOD,testDoNotDestroyExit);
+43	
+44	
+45	
+46	/* CALLER CAN BE ANY PROCESS */
+47	 jpstats_add(jp, "SEM_SIGNAL(invalid semaphore id: negative & out of range id)",TEST_SEM,TEST_INVALIDSEM_SIGNAL,GOOD,testInvalidSemSignal);
+48	 jpstats_add(jp, "SEM_SIGNAL(not initialized semaphore)",TEST_SEM,TEST_NOTINITSEM_SIGNAL,GOOD,testUnitializedSemSignal);
+49	 jpstats_add(jp, "TEST SEMAPHORE REUSE",TEST_SEM,TEST_REUSE_SEM,GOOD,testReuseSem);
+50	/* FATHER EXECUTES SEM_WAIT */
+51	/* If the caller is task0, then it creates a new father and it stands in an enless loop, the new father ends the execution */
+52	 jpstats_add(jp, "SEM_WAIT(invalid semaphore id: negative & out of range id)",TEST_SEM,TEST_INVALIDSEM_WAIT,GOOD,testInvalidSemWait);
+53	 jpstats_add(jp, "SEM_WAIT(not initialized semaphore)",TEST_SEM,TEST_NOTINITSEM_WAIT,GOOD,testUnitializedSemWait);
+54	 jpstats_add(jp, "SEM_SIGNAL(destroyed semaphore)",TEST_SEM,TEST_SIGNAL_DESTROYED,GOOD,testSignalDestroyed);
+55	 jpstats_add(jp, "SEM_WAIT RETURN VALUE ON SUCCESS",TEST_SEM,TEST_SEM_FUNTIONALITY2,GOOD,testSemFunctionality2);
+56	
+57	
+58	 jpstats_add(jp, "SEM_DESTROY(busy semaphore)",TEST_SEM,TEST_BUSYSEM_DESTROY1,GOOD,testDestroyBusySem1);
+59	 jpstats_add(jp, "SEM_DESTROY(busy semaphore):unblock sem_wait",TEST_SEM,TEST_BUSYSEM_DESTROY2,GOOD,testDestroyBusySem2);
+60	 jpstats_add(jp, "SYNCHRONIZING SEVERAL PROCESSES",TEST_SEM,TEST_BLOCK_MANYPS,GOOD,testBlockManyProcess); 
+61	        return 0;
+62	}
+63	
+64	int runjp(void){
+65	        int res;
+66	        res = jpstats_init(&jp, "3rd delivery");
+67	        if (res < 0)
+68	                return res;
+69	        init_deliver(&jp);
+70	        jpstats_run(&jp);
+71	        jpstats_results(&jp);
+72	}
+73	
+74	//with rank
+75	int runjp_rank(int rank_start, int rank_end){
+76	        int res;
+77	        res = jpstats_init_rank(&jp, "3rd delivery", rank_start, rank_end);
+78	        if (res < 0)
+79	                return res;
+80	        init_deliver(&jp);
+81	        jpstats_run(&jp);
+82	        jpstats_results(&jp);
+83	}
+84	
+85	
+86	//syscall used: sem_init
+87	//Tries to init invalid sem
+88	//GROUP: TEST_SEM
+89	//ID: TEST_INIT_INVALID_SEM
+90	
+91	int testInitInvalidSem(struct stat *s){
+92	        int res;
+93	
+94	        res = sem_init(-1,0);
+95	
+96	        if (res >= 0){
+97	                s->ok=BAD; 
+98	                ERROR(s, " TEST: sem_init with negative value doesn't return a -1. ");
+99	        } else{
+100	                if (errno != EINVAL) {
+101	                        s->ok = MEDIUM;
+102	                        ERROR(s, " TEST: sem_init returns a -1, but errno is different from EINVAL ");
+103	                } else {
+104	                        res = sem_init(100,0);
+105	                        if (res >=0){
+106	                                s->ok=BAD;
+107	                                ERROR(s, " TEST: sem_init with a identifier too big doesn't return a -1. ");
+108	                        } else {
+109	                                if (errno != EINVAL){
+110	                                        s->ok = MEDIUM;
+111	                                        ERROR(s, " TEST: sem_init returns a -1, but errno is different from EINVAL ");
+112	                                }
+113	                        }
+114	                }
+115	        }
+116	}
+117	
+118	//syscall used: sem_init,sem_destroy
+119	//Tries to init an already initialized sem
+120	//GROUP: TEST_SEM
+121	//ID: TEST_INIT_INITIALIZED_SEM
+122	
+123	int testInitInitializedSem(struct stat *s){
+124	        int res;
+125	
+126	        res = sem_init(0,0);
+127	        if ( res < 0 ) {
+128	                s->ok=BAD;
+129	                perror(); ERROR(s, " INITTEST: Unable to initialize a semaphore");
+130	        } else {
+131	
+132	                res = sem_init(0,0);
+133	                if (res != -1){
+134	                        s->ok=BAD; 
+135	                        ERROR(s, " TEST: It is possible to initialize an already initialized semaphore");
+136	                } else{
+137	                        if ((res == -1) && (errno != EBUSY)){
+138	                                s->ok = MEDIUM;
+139	                                ERROR(s, " TEST: Returns an error, but different from EBUSY");
+140	                        }
+141	                }
+142	                res=sem_destroy(0);
+143	        }
+144	
+145	
+146	}
+147	//syscall used: sem_init,sem_destroy
+148	//Tries to init an already initialized sem
+149	//GROUP: TEST_SEM
+150	//ID: TEST_INIT_TOOMANY_SEM
+151	
+152	int testInitTooManySem(struct stat *s){
+153	        int res=0;
+154	        int i = 0;
+155	        int MAX = 500; 
+156	
+157	        while (res>=0 && i<MAX){
+158	                res = sem_init(i,0);
+159	                i++;
+160	        }
+161	        if (res >=0){
+162	                s->ok=BAD;
+163	                ERROR(s, " TEST: There isn't any test to check the maximum number of semaphores available");
+164	        } else {
+165	                if ((res == -1) && ((errno==EAGAIN) || (errno == EINVAL))){
+166	                        s->ok = GOOD;
+167	                } else {
+168	                        s->ok = MEDIUM;
+169	                        ERROR(s, " TEST: sem_init returns error, but different from EINVAL or EAGAIN");
+170	                }
+171	        }
+172	
+173	        while (i>0){
+174	                sem_destroy(i-1);
+175	                i--;
+176	        }
+177	}
+178	
+179	//syscall used: sem_init,sem_destroy
+180	//Tries to reuse destroyed sem
+181	//GROUP: TEST_SEM
+182	//ID: TEST_REUSE_SEM
+183	
+184	int testReuseSem(struct stat *s){
+185	        int res=0;
+186	
+187	        res = sem_init(0,0);
+188	        if (res < 0){
+189	                s->ok = BAD;
+190	                perror(); ERROR( s, " INITTEST: Semaphore 0 could not be initialized");
+191	                return;
+192	        }
+193	        res = sem_destroy(0);
+194	        if (res < 0){
+195	                s->ok = BAD;
+196	                perror(); ERROR( s, " INITTEST: Semaphore 0 could not be destroyed");
+197	                return;
+198	        }
+199	        res=sem_init(0,1);
+200	
+201	        if (res < 0){
+202	                s->ok=BAD;
+203	                perror();ERROR( s, " TEST: Semaphore could not be reused");
+204	        } else {
+205	                sem_destroy(0);
+206	        }       
+207	
+208	}
+209	
+210	
+211	
+212	
+213	//syscall used: sem_destroy
+214	//Tries to destroy invalid sem
+215	//GROUP: TEST_SEM
+216	//ID: TEST_DESTROY_INV_SEM
+217	
+218	int testDestroyInvSem(struct stat *s){
+219	        int res;
+220	
+221	        res=sem_destroy(-1);
+222	
+223	        if (res != -1){
+224	                s->ok=BAD; 
+225	                ERROR(s, " TEST: It is possible to destroy an invalid semaphore!");
+226	        } else{
+227	                if ((res == -1) && (errno != EINVAL)){
+228	                        s->ok = MEDIUM;
+229	                        ERROR(s, " TEST: An error is returned, but errno is different from EINVAL");
+230	                } else {
+231	                        res = sem_destroy(100);
+232	                        if (res >=0){
+233	                                s->ok=BAD;
+234	                                ERROR(s, " TEST: It is possible to destroy an invalid semaphore!");
+235	                        } else {
+236	                                if (errno != EINVAL){
+237	                                        s->ok = MEDIUM;
+238	                                        ERROR(s, " TEST: An error is returned, but errno is different from EINVAL");
+239	                                }
+240	                        }
+241	                }
+242	        }
+243	}
+244	
+245	//
+246	//syscall used: sem_destroy
+247	//Tries to destroy a not initialized sem
+248	//GROUP: TEST_SEM
+249	//ID: TEST_DESTROY_NOTINIT_SEM
+250	
+251	int testDestroyNotInitSem(struct stat *s){
+252	        int res;
+253	
+254	
+255	        res=sem_destroy(9); // 0 could be initialized before, 9 is not used before.
+256	
+257	        if (res != -1){
+258	                s->ok=BAD; 
+259	                ERROR(s, " TEST: It is possible to destroy an uninitialized semaphore!");
+260	        } else{
+261	                if ((res == -1) && (errno != EINVAL)){
+262	                        s->ok = MEDIUM;
+263	                        ERROR(s, " TEST: An error is returned, but different from EINVAL");
+264	                }
+265	        }
+266	
+267	
+268	}
+269	// syscall used: fork, sem_init, sem_destroy, nice, exit
+270	// Destroy a sem initialized by other process
+271	//GROUP: TEST_SEM
+272	//ID: TEST_DESTROY_NOTOWNER,GOOD,testDestroyNotOwner);
+273	
+274	int testDestroyNotOwner(struct stat *s){
+275	
+276	        int res;
+277	        int child_pid;
+278	
+279	        sem_init(1,0); //Semaphore to block father
+280	        sem_init(2,0); //Semaphore to block child
+281	        child_pid = fork();
+282	
+283	        if (child_pid < 0){
+284	                s->ok = BAD;
+285	                ERROR(s, "INITTEST: unable to create a child process");
+286	                sem_destroy(1);
+287	                return;
+288	        }
+289	        if (child_pid == 0){
+290	                sem_init(0,0);
+291	                sem_signal(1);
+292	                sem_wait(2); //Wait till father finishes the test
+293	                sem_destroy(0);
+294	                sem_signal(1);
+295	                exit();
+296	                WRITE("Error: process survives after exit!");
+297	                return;
+298	        }
+299	        if (child_pid > 0){
+300	                sem_wait(1); //wait until child executes sem_init;
+301	                res = sem_destroy(0);
+302	                if (res >=0){
+303	                        s->ok = BAD;
+304	                        ERROR(s, "TEST: Can destroy a semaphore owned by another process");
+305	                        return;
+306	                } else {
+307	                        if ((res == -1) && (errno !=EPERM)){
+308	                                s->ok = MEDIUM;
+309	                                ERROR(s, " TEST: An error is returned, but different from EPERM");
+310	
+311	                        }
+312	
+313	                }
+314	                sem_signal(2);
+315	                sem_wait(1); // before continuing the execution child has to destroy the semaphore
+316	                sem_destroy(1);
+317	                sem_destroy(2);
+318	        }
+319	
+320	}
+321	
+322	// syscall used: fork, exit, sem_init, sem_signal, sem_wait
+323	// Exit should destroy all the sems owned by the process
+324	// GROUP: TEST_SEM
+325	// ID: TEST_DESTROY_EXIT
+326	
+327	#define NUMBER_SEM_CREATED 3
+328	int testDestroyExit(struct stat *s){
+329	        int res;
+330	        int child_pid;
+331	        int i;
+332	        int count = 0;
+333	
+334	        //initialize semaphore to synchronize
+335	        if (sem_init(0,0)<0) {
+336	                s->ok = BAD;
+337	                ERROR(s, "INITTEST: Unable to initialize semaphore");
+338	                return;
+339	        }
+340	        child_pid = fork();
+341	        if (child_pid < 0){
+342	                s->ok = BAD;
+343	                ERROR(s, "INITTEST: Unable to create a child process");
+344	                return;
+345	        }
+346	        if (child_pid == 0){
+347	                for (i=1; i<NUMBER_SEM_CREATED+1;i++){
+348	                        sem_init(i,0); //initialize NUMBER_SEM_CREATED semaphores
+349	                }       
+350	                sem_signal(0);
+351	                exit();
+352	                WRITE("Error: process survives after exit!");
+353	                return;
+354	        }
+355	
+356	        sem_wait(0);
+357	        delay(); // wait until child executes exit
+358	        for (i=1; i<NUMBER_SEM_CREATED+1; i++){
+359	                res = sem_init(i,0); //initialize the same semaphores
+360	                if (res < 0){
+361	                        count++;
+362	                }
+363	        }       
+364	
+365	        if (count > 0){
+366	                s->ok=BAD;
+367	                if (count == NUMBER_SEM_CREATED)
+368	                        ERROR(s,"TEST: all the owned semaphores survived after the owner process exit");
+369	                else
+370	                        ERROR(s,"TEST: some of the owned semaphores survived after the owner process exit");
+371	
+372	        }
+373	
+374	}
+375	
+376	
+377	// syscall used: fork, exit, sem_init, sem_signal
+378	// Exit should not destroy the sems owned by other processes
+379	// GROUP: TEST_SEM
+380	// ID: TEST_DONOTDESTROY_EXIT
+381	 
+382	int testDoNotDestroyExit(struct stat *s){
+383	        int res;
+384	        int child_pid;
+385	        int i;
+386	        int count = 0;
+387	
+388	        child_pid = fork();
+389	        if (child_pid < 0){
+390	                s->ok = BAD;
+391	                ERROR(s, "INITTEST: Unable to create a child process");
+392	                return;
+393	        }
+394	        for (i=0; i<NUMBER_SEM_CREATED+1;i++){
+395	                sem_init(i,0); //initialize NUMBER_SEM_CREATED semaphores
+396	        }       
+397	        if (child_pid == 0){
+398	                sem_wait(0);
+399	                exit();
+400	                WRITE("Error: process survives after exit!");
+401	                return;
+402	        }
+403	
+404	        sem_signal(0);
+405	        delay(); // wait until child executes exit
+406	        for (i=0; i<NUMBER_SEM_CREATED+1; i++){
+407	                res = sem_init(i,0); //initialize the same semaphores
+408	                if (res < 0){
+409	                        count++;
+410	                }
+411	                sem_destroy(i);
+412	        }       
+413	
+414	        if (count <  NUMBER_SEM_CREATED){
+415	                s->ok=BAD;
+416	                ERROR(s,"TEST: owned semaphores destroyed after exit of other process");
+417	        }
+418	
+419	}
+420	
+421	
+422	//syscall used: sem_signal
+423	//signal on invalid sem
+424	//GROUP: TEST_SEM
+425	//ID: TEST_INVALIDSEM_SIGNAL
+426	
+427	int testInvalidSemSignal (struct stat *s){
+428	        int res;
+429	
+430	        res=sem_signal(-1);
+431	        if (res>=0){
+432	                s->ok = BAD;
+433	                ERROR(s, " TEST: sem_signal with an invalid id doesn't return a -1. ");
+434	        } else {
+435	                if (errno != EINVAL) {
+436	                        s->ok = MEDIUM;
+437	                        ERROR(s, " TEST: sem_signal with an invalid id returns a -1, but errno is different from EINVAL ");
+438	                } else {
+439	                        res = sem_signal(100);
+440	                        if (res >= 0){
+441	                                s->ok = BAD;
+442	                                ERROR(s, " TEST: sem_signal with a too high id doesn't return a -1. ");
+443	                        } else {
+444	                                if (errno != EINVAL){
+445	                                        s->ok = MEDIUM;
+446	                                        ERROR(s, " TEST: sem_signal with a too high id returns a -1, but errno is different from EINVAL ");
+447	                                }
+448	                        }
+449	                }
+450	        }
+451	}
+452	
+453	//syscall used: sem_signal
+454	//signal on not initialized sem
+455	//GROUP: TEST_SEM
+456	//ID: TEST_NOTINITSEM_SIGNAL
+457	
+458	int testUnitializedSemSignal (struct stat *s){
+459	        int res;
+460	
+461	        res=sem_signal(0);
+462	        if (res>=0){
+463	                s->ok = BAD;
+464	                ERROR(s, " TEST: sem_signal allows signaling an unitialized semaphore");
+465	        } else {
+466	                if (errno != EINVAL){
+467	                        s->ok = MEDIUM;
+468	                        ERROR(s, " TEST: sem_signal returns a -1, but errno is different from EINVAL ");
+469	                }
+470	        }
+471	}
+472	
+473	
+474	//syscall used: sem_signal,sem_init,sem_wait, sem_destroy, getpid, fork, exit
+475	//father executes sem_wait: if caller is task0 creates a new father and iterates on an endless loop
+476	//GROUP: TEST_SEM
+477	//ID: TEST_SIGNAL_DESTROYED
+478	
+479	int  testSignalDestroyed(struct stat *s){
+480	        int child_pid;
+481	        int res;
+482	
+483	        res = sem_init(0,0);
+484	        if ( res < 0 ) {
+485	                perror(); ERROR( s, " INITTEST: Unable to initialize a semaphore");
+486	                s->ok = BAD;
+487	                return;
+488	        }
+489	        res=sem_destroy(0);
+490	        if (res < 0){
+491	                perror(); ERROR( s, " INITTEST: Unable to destroy a semaphore");
+492	                s->ok = BAD;
+493	                return;
+494	        }
+495	        res=sem_signal(0); // error signalling a destroyed sem
+496	        if (res >= 0){
+497	                ERROR( s, " TEST: Signal a non existant semaphore should return an error");
+498	                s->ok=BAD; 
+499	        }
+500	}
+501	
+502	//syscall used: sem_signal,sem_init,sem_wait, sem_destroy, getpid, fork, exit
+503	//GROUP: TEST_SEM
+504	//ID: TEST_SEM_FUNTIONALITY2
+505	
+506	int testSemFunctionality2 (struct stat *s){
+507	        int child_pid;
+508	        int res;
+509	
+510	        res = sem_init(0,0);
+511	        if ( res < 0 ) {
+512	                perror(); ERROR( s, " INITTEST: Unable to initialize a semaphore");
+513	                s->ok = BAD;
+514	                return;
+515	        }
+516	        child_pid = fork();
+517	
+518	        if (child_pid == 0){
+519	                delay();
+520	                sem_signal(0);
+521	                exit();
+522	                WRITE("Error: process survives after exit!");
+523	                return;
+524	
+525	        } else{
+526	                res = sem_wait(0);
+527	                if (res != 0){
+528	                        s->ok=BAD;
+529	                        ERROR( s, " TEST: Wait a semaphore should return zero if success");
+530	                }
+531	                sem_destroy(0);
+532	        }
+533	}
+534	
+535	
+536	// more semaphore tests
+537	//
+538	
+539	//syscall used: sem_wait, fork, getpid
+540	//signal on invalid sem
+541	//GROUP: TEST_SEM
+542	//ID: TEST_INVALIDSEM_WAIT
+543	
+544	int testInvalidSemWait (struct stat *s){
+545	        int res;
+546	
+547	        res = sem_wait(-1);
+548	        if (res>=0){
+549	                s->ok = BAD;
+550	                ERROR(s, " TEST: sem_wait with negative value doesn't return -1 ");
+551	        } else {
+552	                if (errno != EINVAL){
+553	                        ERROR(s, " TEST: a -1 value is returned but errno is different from EINVAL ");
+554	                        s->ok = MEDIUM;
+555	                } else {
+556	                        res = sem_wait(100);
+557	                        if (res >=0){
+558	                                ERROR(s, " TEST: sem_wait with a too high value doesn't return -1 ");
+559	                                s->ok =BAD;
+560	                        } else {
+561	                                if (errno != EINVAL){
+562	                                        ERROR(s, " TEST: a -1 value is returned but errno is different from EINVAL ");
+563	                                        s->ok = MEDIUM;
+564	                                }
+565	                        }
+566	                }
+567	        }
+568	}
+569	
+570	//syscall used: sem_wait
+571	//if caller is task 0 it creates a new father and stans on an endless loop
+572	//signal on not initialized sem
+573	//GROUP: TEST_SEM
+574	//ID: TEST_NOTINITSEM_WAIT
+575	
+576	int testUnitializedSemWait (struct stat *s){
+577	        int res;
+578	
+579	        res=sem_wait(0);
+580	        if (res>=0){
+581	                s->ok = BAD;
+582	                ERROR(s, " TEST: sem_wait allows waiting on an unitialized semaphore");
+583	        } else {
+584	                if (errno != EINVAL){
+585	                        s->ok = MEDIUM;
+586	                        ERROR(s, " TEST: sem_wait returns a -1, but errno is different from EINVAL ");
+587	                }
+588	        }
+589	
+590	
+591	}
+592	
+593	//syscall used: sem_wait, sem_signal, sem_init, sem_destroy,nice
+594	//tries to destroy a busy sem: sem_destroy should not return an error
+595	//GROUP: TEST_SEM
+596	//ID: TEST_BUSYSEM_DESTROY1
+597	
+598	int testDestroyBusySem1 (struct stat *s){
+599	        int res,i;
+600	        int child_pid;
+601	
+602	
+603	        res = sem_init(0,0);
+604	        if (res<0){
+605	                s->ok = BAD;
+606	                perror(); ERROR(s, " INITTEST: Unable to initialize a semaphore ");
+607	                return;
+608	        } 
+609	
+610	        child_pid=fork();
+611	        if (child_pid < 0){
+612	                s->ok = BAD;
+613	                perror(); ERROR(s, " INITTEST: A child could not be created");
+614	                sem_destroy(0);
+615	                return;
+616	
+617	        }
+618	        if (child_pid == 0){
+619	                res = sem_wait(0);
+620	                exit();
+621	        } 
+622	
+623	        delay(); //delay to ensure that child is blocked
+624	        res= sem_destroy(0);
+625	        if (res < 0){
+626	                s->ok = BAD;
+627	                ERROR(s, " TEST: unable to destroy a busy semaphore");
+628	                sem_signal(0);
+629	                sem_destroy(0);
+630	        }
+631	        return;
+632	}
+633	
+634	
+635	//syscall used: fork, sem_wait, sem_signal, sem_init, sem_destroy,nice
+636	//tries to destroy a busy sem: should unblock sem_wait and return error
+637	//GROUP: TEST_SEM
+638	//ID: TEST_BUSYSEM_DESTROY2
+639	int testDestroyBusySem2 (struct stat *s){
+640	        int res,i;
+641	        int child_pid;
+642	
+643	        res = sem_init(0,0);
+644	        if (res<0){
+645	                s->ok = BAD;
+646	                perror(); ERROR(s, " INITTEST: Unable to initialize a semaphore ");
+647	                return;
+648	        } 
+649	
+650	        child_pid=fork();
+651	        if (child_pid < 0){
+652	                s->ok = BAD;
+653	                perror(); ERROR(s, " INITTEST: A child could not be created");
+654	                sem_destroy(0);
+655	                return;
+656	
+657	        }
+658	        if (child_pid == 0){
+659	                res = sem_wait(0);
+660	                if (res>=0){
+661	                        s->ok = BAD;
+662	                        ERROR(s, " TEST: sem_destroy on a busy semaphore should unblock the processes and the sem_wait should return error");
+663	                } 
+664	                return;
+665	        } 
+666	
+667	        delay(); //delay to ensure that child is blocked
+668	        res= sem_destroy(0);
+669	        if (res < 0){
+670	                ERROR(s, " TEST: unable to destroy a busy semaphore");
+671	                sem_signal(0);
+672	        }
+673	        exit();
+674	        WRITE("Error: process survives after exit!");
+675	}
+676	
+677	//NEW
+678	//syscall used: sem_signal,sem_init,sem_wait, sem_destroy, fork, exit
+679	//father creates a semaphore and three childs that are blocked with the same  semaphore
+680	//GROUP: TEST_SEM
+681	//ID: TEST_MANY_BLOCKED_PROCESSES
+682	int testBlockManyProcess(struct stat *s){
+683	        int child_pid, child_pid2, child_pid3;
+684	        int res;
+685	        struct stats stats;
+686	
+687	        res = sem_init(0,0);
+688	
+689	        child_pid = fork();
+690	        if (child_pid <0){
+691	                s->ok = BAD;
+692	                perror(); ERROR( s, " INITTEST: Unable to create a child");
+693	                sem_destroy(0);
+694	                return;
+695	        }
+696	        else if (child_pid == 0) {
+697	                sem_wait(0);
+698	                exit();
+699	        }
+700	
+701	        delay();
+702	
+703	        child_pid2 = fork();
+704	        if (child_pid2 <0){
+705	                s->ok = BAD;
+706	                perror(); ERROR( s, " INITTEST: Unable to create a child");
+707	                sem_destroy(0);
+708	                return;
+709	        }
+710	        else if (child_pid2 == 0) {
+711	                sem_wait(0);
+712	                exit();
+713	        }
+714	
+715	        delay();
+716	
+717	        child_pid3 = fork();
+718	        if (child_pid3 <0){
+719	                s->ok = BAD;
+720	                perror(); ERROR( s, " INITTEST: Unable to create a child");
+721	                sem_destroy(0);
+722	                return;
+723	        }
+724	        else if (child_pid3 == 0) {
+725	                sem_wait(0);
+726	                exit();
+727	        }
+728	
+729	        delay();
+730	
+731	        sem_signal(0);
+732	        delay();
+733	        sem_signal(0);
+734	        delay();
+735	        sem_signal(0);
+736	        delay();
+737	
+738	        if (get_stats(child_pid,&stats) >= 0 || get_stats(child_pid2,&stats) >= 0 || get_stats(child_pid3,&stats) >= 0){
+739	                s->ok=BAD; 
+740	                ERROR( s, " TEST: Cannot unblock processes blocked by the same semaphore (or getstats return a positive value for a dead process)");
+741	        }
+742	
+743	        sem_destroy(0);
+744	}
+745	
+746	int zeos_nice (int quant)
+747	{
+748	 int rvalue = 0;
+749	
+750	  __asm__ __volatile__ (
+751	    "int $0x82\n\t"
+752	    : "=a" (rvalue)
+753	    : "b" (quant), "a" (0x04)
+754	  );
+755	
+756	  return rvalue;
+757	}
+758	
+759	
+Note: See TracBrowser for help on using the repository browser.
+Download in other formats:
+
+    * Plain Text
+    * Original Format
+
+Trac Powered
+
+Powered by Trac 0.12.3rc1
+By Edgewall Software.
+
+Visit the Trac open source project at
+http://trac.edgewall.org/

@@ -1,0 +1,25 @@
+VGA BIOS - Version 2.40
+Copyright (C) 1990-2000 Elpin Systems, Inc.
+All rights reserved.
+
+Licensed for use with bochs, courtesy of MandrakeSoft.
+
+For information on this or other VGA development products, contact
+Elpin Systems at: (800) 723-9038 or www.elpin.com
+
+Bochs BIOS - build: 08/11/06
+$Revision: 1.166 $ $Date: 2006/08/11 17:34:12 $
+Options: apmbios pcibios eltorito
+
+
+Booting from Floppy...
+Kernel Loaded!    Entering user mode...
+Loading..........................
+
+
+
+
+
+
+
+
